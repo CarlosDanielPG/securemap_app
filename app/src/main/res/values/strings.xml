@@ -10,4 +10,5 @@
     <string name="user_location_permission_explanation">Necesitamos permisos de ubicación</string>
     <string name="user_location_permission_not_granted">La aplicación no puede funcionar sin permisos de ubicación</string>
     <string name="new_location">Latitud: %s Longitud: %s</string>
+    <string name="search">Buscar</string>
 </resources>
