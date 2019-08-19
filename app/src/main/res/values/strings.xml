@@ -1,3 +1,13 @@
 <resources>
     <string name="app_name">SecureMap</string>
+
+    <string name="title_activity_fullscreen">FullscreenActivity</string>
+    <string name="dummy_button">Dummy Button</string>
+    <string name="dummy_content">DUMMY\nCONTENT</string>
+    <string name="access_token">pk.eyJ1IjoiY2FybG9zZGFuaWVscGciLCJhIjoiY2p6OXc1bDg3MDUxczNsbGZwNGRxZDNpYiJ9.W1650WD4ODTOVLRgzIzxLg</string>
+    <string name="initial_lat">20.6564751</string>
+    <string name="initial_lng">-103.3246449</string>
+    <string name="user_location_permission_explanation">Necesitamos permisos de ubicación</string>
+    <string name="user_location_permission_not_granted">La aplicación no puede funcionar sin permisos de ubicación</string>
+    <string name="new_location">Latitud: %s Longitud: %s</string>
 </resources>
