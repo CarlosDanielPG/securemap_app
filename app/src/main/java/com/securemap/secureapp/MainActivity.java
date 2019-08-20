@@ -37,6 +37,8 @@ import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
 import com.mapbox.mapboxsdk.maps.Style;
 import com.mapbox.mapboxsdk.plugins.places.autocomplete.PlaceAutocomplete;
 import com.mapbox.mapboxsdk.plugins.places.autocomplete.model.PlaceOptions;
+import com.mapbox.mapboxsdk.plugins.localization.LocalizationPlugin;
+import com.mapbox.mapboxsdk.plugins.localization.MapLocale;
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
@@ -51,7 +53,6 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener {
 
-    private static final String ICON_ID = "red-pin-icon-id";
     private static final int REQUEST_CODE_AUTOCOMPLETE = 1;
     private static final long DEFAULT_INTERVAL_IN_MILLISECONDS = 1000L;
     private static final long DEFAULT_MAX_WAIT_TIME = DEFAULT_INTERVAL_IN_MILLISECONDS * 5;
@@ -60,23 +61,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private String geojsonSourceLayerId = "source-id";
     private String symbolIconId = "marker-icon-id";
     private PermissionsManager permissionsManager;
+    private LocalizationPlugin localizationPlugin;
     private LocationEngine locationEngine;
     private LocationChangeListeningActivityLocationCallback callback =
             new LocationChangeListeningActivityLocationCallback(this);
 
     private static Location currentLocation;
 
+    // OnCreate Activity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Mapbox access token is configured here. This needs to be called either in your application
-        // object or in the same activity which contains the mapview.
+        // Initialize Mapbox with access_token
         Mapbox.getInstance(this, getString(R.string.access_token));
-
-        // This contains the MapView in XML and needs to be called after the access token is configured.
         setContentView(R.layout.activity_main);
-
         mapView = findViewById(R.id.mapView);
         mapView.onCreate(savedInstanceState);
         mapView.getMapAsync(this);
@@ -85,27 +83,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onMapReady(@NonNull final MapboxMap mapboxMap) {
         this.mapboxMap = mapboxMap;
+        mapboxMap.setStyle(new Style.Builder().fromUrl("mapbox://styles/carlosdanielpg/cjzho34aq24ma1cpgrydouhvr"),
+            new Style.OnStyleLoaded() {
+                @Override public void onStyleLoaded(@NonNull Style style) {
+                    localizationPlugin = new LocalizationPlugin(mapView, mapboxMap, style);
+                    try {
+                        localizationPlugin.matchMapLanguageWithDeviceDefault();
 
-        mapboxMap.setStyle(Style.MAPBOX_STREETS,
-                new Style.OnStyleLoaded() {
-                    @Override public void onStyleLoaded(@NonNull Style style) {
-                        /*style.addImage("marker-icon-id",
-                                BitmapFactory.decodeResource(
-                                        MainActivity.this.getResources(), R.drawable.mapbox_marker_icon_default));
-                        GeoJsonSource geoJsonSource = new GeoJsonSource("source-id", Feature.fromGeometry(
-                                Point.fromLngLat(Float.valueOf(getString(R.string.initial_lng)), Float.valueOf(R.string.initial_lat))));
-                        style.addSource(geoJsonSource);
-                        SymbolLayer symbolLayer = new SymbolLayer("layer-id", "source-id");
-                        symbolLayer.withProperties(
-                                PropertyFactory.iconImage("marker-icon-id")
-                        );
-                        style.addLayer(symbolLayer);*/
-                        enableLocationComponent(style);
-                        initSearchFab();
-                        setUpSource(style);
-                        setupLayer(style);
+                    } catch (RuntimeException exception) {
+                        Log.e("Error", exception.getMessage());
                     }
-                });
+                    // Add Marker (so confusing bro :c)
+                    style.addImage(symbolIconId, BitmapFactory.decodeResource(
+                            MainActivity.this.getResources(), R.drawable.mapbox_marker_icon_default));
+                    enableLocationComponent(style);
+                    initSearchFab();
+                    setUpSource(style);
+                    setupLayer(style);
+                }
+            });
     }
 
     private void initSearchFab() {
@@ -246,10 +242,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 Log.d("Tag", String.format(activity.getString(R.string.new_location),
                         String.valueOf(result.getLastLocation().getLatitude()),
                         String.valueOf(result.getLastLocation().getLongitude())));
-                /*Toast.makeText(activity, String.format(activity.getString(R.string.new_location),
-                        String.valueOf(result.getLastLocation().getLatitude()),
-                        String.valueOf(result.getLastLocation().getLongitude())),
-                        Toast.LENGTH_SHORT).show();*/
 
                 // Pass the new location to the Maps SDK's LocationComponent
                 if (activity.mapboxMap != null && result.getLastLocation() != null) {
