@@ -9,7 +9,10 @@ import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.location.Location;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import android.annotation.SuppressLint;
 
@@ -24,9 +27,11 @@ import com.mapbox.android.core.permissions.PermissionsListener;
 import com.mapbox.android.core.permissions.PermissionsManager;
 import com.mapbox.geojson.Feature;
 import com.mapbox.geojson.FeatureCollection;
+import com.mapbox.geojson.LineString;
 import com.mapbox.geojson.Point;
 import com.mapbox.mapboxsdk.Mapbox;
 import com.mapbox.mapboxsdk.geometry.LatLng;
+import com.mapbox.mapboxsdk.geometry.LatLngBounds;
 import com.mapbox.mapboxsdk.location.LocationComponent;
 import com.mapbox.mapboxsdk.location.LocationComponentActivationOptions;
 import com.mapbox.mapboxsdk.location.modes.CameraMode;
@@ -38,7 +43,12 @@ import com.mapbox.mapboxsdk.maps.Style;
 import com.mapbox.mapboxsdk.plugins.places.autocomplete.PlaceAutocomplete;
 import com.mapbox.mapboxsdk.plugins.places.autocomplete.model.PlaceOptions;
 import com.mapbox.mapboxsdk.plugins.localization.LocalizationPlugin;
-import com.mapbox.mapboxsdk.plugins.localization.MapLocale;
+import com.mapbox.mapboxsdk.plugins.places.picker.PlacePicker;
+import com.mapbox.mapboxsdk.plugins.places.picker.model.PlacePickerOptions;
+import com.mapbox.mapboxsdk.plugins.markerview.MarkerView;
+import com.mapbox.mapboxsdk.plugins.markerview.MarkerViewManager;
+import com.mapbox.mapboxsdk.style.layers.LineLayer;
+import com.mapbox.mapboxsdk.style.layers.Property;
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
@@ -49,15 +59,22 @@ import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconOffset;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.List;
+
+import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener {
 
     private static final int REQUEST_CODE_AUTOCOMPLETE = 1;
+    private static final int PLACEPICKER_REQUEST_CODE = 5678;
     private static final long DEFAULT_INTERVAL_IN_MILLISECONDS = 1000L;
     private static final long DEFAULT_MAX_WAIT_TIME = DEFAULT_INTERVAL_IN_MILLISECONDS * 5;
     private MapboxMap mapboxMap;
     private MapView mapView;
+    private MarkerView markerView;
+    private MarkerViewManager markerViewManager;
+    private View customView;
     private String geojsonSourceLayerId = "source-id";
     private String symbolIconId = "marker-icon-id";
     private PermissionsManager permissionsManager;
@@ -86,6 +103,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapboxMap.setStyle(new Style.Builder().fromUrl("mapbox://styles/carlosdanielpg/cjzho34aq24ma1cpgrydouhvr"),
             new Style.OnStyleLoaded() {
                 @Override public void onStyleLoaded(@NonNull Style style) {
+                    markerViewManager = new MarkerViewManager(mapView, mapboxMap);
                     localizationPlugin = new LocalizationPlugin(mapView, mapboxMap, style);
                     try {
                         localizationPlugin.matchMapLanguageWithDeviceDefault();
@@ -114,9 +132,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 .backgroundColor(Color.parseColor("#EEEEEE"))
                                 .proximity(Point.fromLngLat(currentLocation.getLongitude(), currentLocation.getLatitude()))
                                 .limit(10)
-                                .hint("Ingresa el destino")
-                                .language("es")
-                                .country("MX")
+                                //.hint("Ingresa el destino")
+                                //.language("es")
+                                //.country("MX")
                                 .build(PlaceOptions.MODE_CARDS))
                         .build(MainActivity.this);
                 startActivityForResult(intent, REQUEST_CODE_AUTOCOMPLETE);
@@ -124,6 +142,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
     }
 
+    //region Set Up Mapbox SDK
     private void setUpSource(@NonNull Style loadedMapStyle) {
         loadedMapStyle.addSource(new GeoJsonSource(geojsonSourceLayerId));
     }
@@ -170,7 +189,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             permissionsManager.requestLocationPermissions(this);
         }
     }
+    //endregion
 
+    //region Location Request
     /**
      * Set up the LocationEngine and the parameters for querying the device's location
      */
@@ -265,7 +286,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
         }
     }
+    //endregion
 
+    // Event triggered when PlaceAutocomplete ends with result code OK
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -276,7 +299,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             // Create a new FeatureCollection and add a new Feature to it using selectedCarmenFeature above.
             // Then retrieve and update the source designated for showing a selected location's symbol layer icon
+            goToPlacePicker(selectedCarmenFeature);
 
+        } else if(resultCode == Activity.RESULT_OK && requestCode == PLACEPICKER_REQUEST_CODE) {
+            CarmenFeature selectedCarmenFeature = PlaceAutocomplete.getPlace(data);
+            Log.i("tag", "Place: " + selectedCarmenFeature.toJson());
             if (mapboxMap != null) {
                 Style style = mapboxMap.getStyle();
                 if (style != null) {
@@ -286,17 +313,75 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 new Feature[] {Feature.fromJson(selectedCarmenFeature.toJson())}));
                     }
 
+                    customView = LayoutInflater.from(MainActivity.this).inflate(
+                            R.layout.marker_view_bubble, null);
+
+                    customView.setLayoutParams(new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
+
+                    TextView titleTextView = customView.findViewById(R.id.marker_window_title);
+                    titleTextView.setText("Destino");
+
+                    TextView snippetTextView = customView.findViewById(R.id.marker_window_snippet);
+                    if(selectedCarmenFeature.address() != null)
+                        snippetTextView.setText(selectedCarmenFeature.text() + " #" + selectedCarmenFeature.address());
+                    else
+                        snippetTextView.setText(selectedCarmenFeature.text());
+
+                    markerView = new MarkerView(new LatLng(((Point) selectedCarmenFeature.geometry()).latitude(), ((Point) selectedCarmenFeature.geometry()).longitude()), customView);
+                    markerViewManager.addMarker(markerView);
+
+                    if(style.getLayer("linelayer") != null) {
+                        style.removeLayer("linelayer");
+                        Log.i("tag", "Removed LineLayer");
+                    }
+
+                    if(style.getSource("line-source") != null) {
+                        style.removeSource("line-source");
+                        Log.i("tag", "Removed LineSource");
+                    }
+                    List<Point> directRouteCoordinates = new ArrayList<>();
+                    directRouteCoordinates.add(Point.fromLngLat(currentLocation.getLongitude(), currentLocation.getLatitude()));
+                    directRouteCoordinates.add(Point.fromLngLat(((Point) selectedCarmenFeature.geometry()).longitude(), ((Point) selectedCarmenFeature.geometry()).latitude()));
+                    style.addSource(new GeoJsonSource("line-source",
+                            FeatureCollection.fromFeatures(new Feature[] {Feature.fromGeometry(
+                                    LineString.fromLngLats(directRouteCoordinates)
+                            )})));
+                    style.addLayer(new LineLayer("linelayer", "line-source").withProperties(
+                            PropertyFactory.lineDasharray(new Float[] {0.01f, 2f}),
+                            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                            PropertyFactory.lineWidth(5f),
+                            PropertyFactory.lineColor(Color.parseColor("#e55e5e"))
+                    ));
+
+                    LatLngBounds latLngBounds = new LatLngBounds.Builder()
+                            .include(new LatLng(((Point) selectedCarmenFeature.geometry()).latitude(), ((Point) selectedCarmenFeature.geometry()).longitude()))
+                            .include(new LatLng(currentLocation.getLatitude(), currentLocation.getLongitude()))
+                            .build();
+                    mapboxMap.animateCamera(CameraUpdateFactory.newLatLngBounds(latLngBounds, 100));
                     // Move map camera to the selected location
-                    mapboxMap.animateCamera(CameraUpdateFactory.newCameraPosition(
+                   /* mapboxMap.animateCamera(CameraUpdateFactory.newCameraPosition(
                             new CameraPosition.Builder()
                                     .target(new LatLng(((Point) selectedCarmenFeature.geometry()).latitude(),
                                             ((Point) selectedCarmenFeature.geometry()).longitude()))
                                     .zoom(14)
-                                    .build()), 4000);
+                                    .build()), 4000);*/
 
                 }
             }
         }
+    }
+
+    private void goToPlacePicker(CarmenFeature carmenFeature) {
+        startActivityForResult(
+                new PlacePicker.IntentBuilder()
+                        .accessToken(getString(R.string.access_token))
+                        .placeOptions(PlacePickerOptions.builder()
+                                .statingCameraPosition(new CameraPosition.Builder()
+                                        .target(new LatLng(((Point) carmenFeature.geometry()).latitude(),
+                                                ((Point) carmenFeature.geometry()).longitude())).zoom(16).build())
+                                .build())
+                        .build(this), PLACEPICKER_REQUEST_CODE);
     }
 
     @Override
