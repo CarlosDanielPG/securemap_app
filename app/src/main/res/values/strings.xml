@@ -11,4 +11,9 @@
     <string name="user_location_permission_not_granted">La aplicación no puede funcionar sin permisos de ubicación</string>
     <string name="new_location">Latitud: %s Longitud: %s</string>
     <string name="search">Buscar</string>
+    <string name="title_activity_navigation">ActivityNavigation</string>
+    <string name="title_home">Home</string>
+    <string name="title_dashboard">Dashboard</string>
+    <string name="title_notifications">Notifications</string>
+    <string name="input_hint">Ingresa tu destino</string>
 </resources>

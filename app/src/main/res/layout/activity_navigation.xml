@@ -5,8 +5,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity"
-    android:focusableInTouchMode="true">
+    tools:context=".NavigationActivity">
 
     <com.mapbox.mapboxsdk.maps.MapView
         android:id="@+id/mapView"
@@ -19,18 +18,6 @@
         mapbox:mapbox_cameraTargetLat="@string/initial_lat"
         mapbox:mapbox_cameraTargetLng="@string/initial_lng"
         mapbox:mapbox_cameraZoom="14">
-
-        <EditText
-            android:id="@+id/input_destiny"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:layout_marginLeft="30dp"
-            android:layout_marginTop="100dp"
-            android:layout_marginRight="30dp"
-            android:paddingLeft="15dp"
-            android:hint="@string/input_hint"
-            android:background="@drawable/input_round"
-            android:focusable="false"/>
     </com.mapbox.mapboxsdk.maps.MapView>
 
 </android.support.constraint.ConstraintLayout>
