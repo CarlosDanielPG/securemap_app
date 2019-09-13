@@ -18,6 +18,18 @@
         mapbox:mapbox_cameraTargetLat="@string/initial_lat"
         mapbox:mapbox_cameraTargetLng="@string/initial_lng"
         mapbox:mapbox_cameraZoom="14">
+
+        <Button
+            android:id="@+id/search_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginLeft="30dp"
+            android:layout_marginRight="30dp"
+            android:layout_marginBottom="30dp"
+            android:background="@drawable/button_round"
+            android:textColor="@color/mapbox_plugins_white"
+            android:text="Buscar ruta" />
     </com.mapbox.mapboxsdk.maps.MapView>
 
 </android.support.constraint.ConstraintLayout>

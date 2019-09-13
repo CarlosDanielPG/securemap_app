@@ -244,11 +244,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     currentLocation = location;
                 }
 
-                // Create a Toast which displays the new location's coordinates
-                Log.d("Tag", String.format(activity.getString(R.string.new_location),
-                        String.valueOf(result.getLastLocation().getLatitude()),
-                        String.valueOf(result.getLastLocation().getLongitude())));
-
                 // Pass the new location to the Maps SDK's LocationComponent
                 if (activity.mapboxMap != null && result.getLastLocation() != null) {
                     activity.mapboxMap.getLocationComponent().forceLocationUpdate(result.getLastLocation());

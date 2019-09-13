@@ -14,11 +14,14 @@ import android.support.v7.app.AppCompatActivity;
 import android.location.Location;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.annotation.SuppressLint;
@@ -65,6 +68,11 @@ import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.mapboxsdk.camera.CameraPosition;
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
+import com.securemap.secureapp.models.LocationID;
+import com.securemap.secureapp.models.PointLocation;
+import com.securemap.secureapp.models.RouteResponse;
+import com.securemap.secureapp.utilities.PointService;
+import com.securemap.secureapp.utilities.RouteService;
 
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconOffset;
@@ -76,21 +84,29 @@ import java.util.List;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
 public class NavigationActivity extends AppCompatActivity implements OnMapReadyCallback {
-    private static final int REQUEST_CODE_AUTOCOMPLETE = 1;
-    private static final int PLACEPICKER_REQUEST_CODE = 5678;
+    private static final int REQUEST_CODE_AUTOCOMPLETE_ORIGIN = 1;
+    private static final int REQUEST_CODE_AUTOCOMPLETE_DESTINY = 2;
+    private static final int PLACEPICKER_ORIGIN_REQUEST_CODE = 5678;
+    private static final int PLACEPICKER_DESTINY_REQUEST_CODE = 5679;
     private MapboxMap mapboxMap;
     private MapView mapView;
-    private MarkerView markerView;
+    private MarkerView markerViewOrigin = null;
+    private MarkerView markerViewDestiny = null;
     private MarkerViewManager markerViewManager;
     private View customView;
+    private Button searchButton;
     private String geojsonSourceLayerId = "source-id";
     private String geojsonSourceOriginId = "origin-id";
     private String symbolIconId = "marker-icon-id";
     private LocalizationPlugin localizationPlugin;
+    private Retrofit retrofit;
+    private final String BASE_URL = "https://stormy-plateau-08743.herokuapp.com/api/";
 
     private static final Location origin = new Location("");
     private static final Location destiny = new Location("");
@@ -98,7 +114,8 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getSupportActionBar().setBackgroundDrawable(new ColorDrawable(ContextCompat.getColor(this, R.color.translucent)));
+        //getSupportActionBar().setBackgroundDrawable(new ColorDrawable(ContextCompat.getColor(this, R.color.translucent)));
+
         // Initialize Mapbox with access_token
         Mapbox.getInstance(this, getString(R.string.access_token));
         setContentView(R.layout.activity_navigation);
@@ -107,11 +124,27 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
         origin.setLongitude(intent.getDoubleExtra("origin_longitude", -103.326484));
         destiny.setLatitude(intent.getDoubleExtra("destiny_latitude", 20.654362));
         destiny.setLongitude(intent.getDoubleExtra("destiny_longitude", -103.326484));
-        ActionBar actionBar = getSupportActionBar();
-        actionBar.hide();
+        try{
+            ActionBar actionBar = getSupportActionBar();
+            actionBar.setDisplayShowTitleEnabled(false);
+            actionBar.setDisplayHomeAsUpEnabled(true);
+        } catch(NullPointerException exception) {
+            Log.e("Error", exception.getMessage());
+        }
+
         mapView = findViewById(R.id.mapView);
         mapView.onCreate(savedInstanceState);
         mapView.getMapAsync(this);
+
+        retrofit = new Retrofit.Builder()
+                .baseUrl(BASE_URL)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        searchButton = findViewById(R.id.search_button);
+        searchButton.setOnClickListener((View view) -> {
+            searchPoints(origin, destiny);
+        });
     }
 
     @Override
@@ -203,20 +236,30 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         // Searched direction of destiny
-        if (resultCode == Activity.RESULT_OK && requestCode == REQUEST_CODE_AUTOCOMPLETE) {
-
+        if (resultCode == Activity.RESULT_OK &&
+                (requestCode == REQUEST_CODE_AUTOCOMPLETE_ORIGIN || requestCode == REQUEST_CODE_AUTOCOMPLETE_DESTINY)
+        ) {
             // Retrieve selected location's CarmenFeature
             CarmenFeature selectedCarmenFeature = PlaceAutocomplete.getPlace(data);
 
             // Create a new FeatureCollection and add a new Feature to it using selectedCarmenFeature above.
             // Then retrieve and update the source designated for showing a selected location's symbol layer icon
-            goToPlacePicker(selectedCarmenFeature);
+            goToPlacePicker(selectedCarmenFeature, requestCode == REQUEST_CODE_AUTOCOMPLETE_ORIGIN);
 
-        } else if(resultCode == Activity.RESULT_OK && requestCode == PLACEPICKER_REQUEST_CODE) {
+        } else if(resultCode == Activity.RESULT_OK && requestCode == PLACEPICKER_ORIGIN_REQUEST_CODE) {
+            CarmenFeature selectedCarmenFeature = PlaceAutocomplete.getPlace(data);
+            origin.setLongitude(selectedCarmenFeature.center().longitude());
+            origin.setLatitude(selectedCarmenFeature.center().latitude());
+            putMarkers();
+        } else if(resultCode == Activity.RESULT_OK && requestCode == PLACEPICKER_DESTINY_REQUEST_CODE) {
+            CarmenFeature selectedCarmenFeature = PlaceAutocomplete.getPlace(data);
+            destiny.setLongitude(selectedCarmenFeature.center().longitude());
+            destiny.setLatitude(selectedCarmenFeature.center().latitude());
+            putMarkers();
         }
     }
 
-    private void goToPlacePicker(CarmenFeature carmenFeature) {
+    private void goToPlacePicker(CarmenFeature carmenFeature, boolean is_origin) {
         startActivityForResult(
                 new PlacePicker.IntentBuilder()
                         .accessToken(getString(R.string.access_token))
@@ -225,10 +268,10 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                                         .target(new LatLng(((Point) carmenFeature.geometry()).latitude(),
                                                 ((Point) carmenFeature.geometry()).longitude())).zoom(16).build())
                                 .build())
-                        .build(this), PLACEPICKER_REQUEST_CODE);
+                        .build(this), (is_origin) ? PLACEPICKER_ORIGIN_REQUEST_CODE : PLACEPICKER_DESTINY_REQUEST_CODE);
     }
 
-    private void reverseGeocoding(final Location location, boolean origin) {
+    private void reverseGeocoding(final Location location, boolean is_origin) {
         try {
             MapboxGeocoding reverseGeocoding = MapboxGeocoding.builder()
                     .accessToken(getString(R.string.access_token))
@@ -248,19 +291,38 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                             customView.setLayoutParams(new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
 
                             TextView titleTextView = customView.findViewById(R.id.marker_window_title);
-                            if(origin)
-                                titleTextView.setText("Origen");
-                            else
-                                titleTextView.setText("Destino");
-
-                            TextView snippetTextViewOrigin = customView.findViewById(R.id.marker_window_snippet);
                             if(feature.address() != null)
-                                snippetTextViewOrigin.setText(feature.text() + " #" + feature.address());
+                                titleTextView.setText(feature.text() + " #" + feature.address());
                             else
-                                snippetTextViewOrigin.setText(feature.text());
+                                titleTextView.setText(feature.text());
 
-                            markerView = new MarkerView(new LatLng(((Point) feature.geometry()).latitude(), ((Point) feature.geometry()).longitude()), customView);
-                            markerViewManager.addMarker(markerView);
+                            ImageView icon = customView.findViewById(R.id.marker_icon);
+                            icon.setOnClickListener((View view) -> {
+                                Intent intent = new PlaceAutocomplete.IntentBuilder()
+                                        .accessToken(Mapbox.getAccessToken())
+                                        .placeOptions(PlaceOptions.builder()
+                                                .backgroundColor(Color.parseColor("#EEEEEE"))
+                                                .proximity(Point.fromLngLat((is_origin) ? origin.getLongitude() : destiny.getLongitude(),
+                                                        (is_origin) ? origin.getLatitude(): destiny.getLatitude()))
+                                                .limit(10)
+                                                .build(PlaceOptions.MODE_CARDS))
+                                        .build(NavigationActivity.this);
+                                startActivityForResult(intent, (is_origin) ? REQUEST_CODE_AUTOCOMPLETE_ORIGIN : REQUEST_CODE_AUTOCOMPLETE_DESTINY);
+                            });
+
+                            if(is_origin) {
+                                if(markerViewOrigin != null) {
+                                    markerViewManager.removeMarker(markerViewOrigin);
+                                }
+                                markerViewOrigin = new MarkerView(new LatLng(((Point) feature.geometry()).latitude(), ((Point) feature.geometry()).longitude()), customView);
+                                markerViewManager.addMarker(markerViewOrigin);
+                            } else {
+                                if(markerViewDestiny != null) {
+                                    markerViewManager.removeMarker(markerViewDestiny);
+                                }
+                                markerViewDestiny = new MarkerView(new LatLng(((Point) feature.geometry()).latitude(), ((Point) feature.geometry()).longitude()), customView);
+                                markerViewManager.addMarker(markerViewDestiny);
+                            }
                         } else {
                             Log.i("tag", "No hay resultados");
                         }
@@ -275,6 +337,103 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
         } catch(ServicesException serviceException) {
             Log.i("Error", "Geocoding Failure: " + serviceException.toString());
         }
+    }
+
+    private void searchPoints(Location locationOrigin, Location locationDestiny) {
+        PointService service = retrofit.create(PointService.class);
+        Call<LocationID> locationIDCallOrigin = service.getLocation(locationOrigin.getLatitude(), locationOrigin.getLongitude());
+        Call<LocationID> locationIDCallDestiny = service.getLocation(locationDestiny.getLatitude(), locationDestiny.getLongitude());
+
+        locationIDCallOrigin.enqueue(new Callback<LocationID>() {
+            @Override
+            public void onResponse(Call<LocationID> call, Response<LocationID> response) {
+                if(response.isSuccessful()) {
+                    LocationID locationIDOrigin = response.body();
+                    locationIDCallDestiny.enqueue(new Callback<LocationID>() {
+                        @Override
+                        public void onResponse(Call<LocationID> call, Response<LocationID> response) {
+                            if(response.isSuccessful()) {
+                                LocationID locationIDDestiny = response.body();
+                                onFoundPoints(locationIDOrigin, locationIDDestiny);
+                            } else {
+                                Log.i("tag", "Error in response");
+                            }
+                        }
+
+                        @Override
+                        public void onFailure(Call<LocationID> call, Throwable t) {
+                            Log.i("tag", "Failure");
+                        }
+                    });
+                } else {
+                    Log.i("tag", "Error in response");
+                }
+            }
+
+            @Override
+            public void onFailure(Call<LocationID> call, Throwable t) {
+                Log.i("tag", "Failure");
+            }
+        });
+    }
+
+    private void onFoundPoints(LocationID locationOrigin, LocationID locationDestiny) {
+        RouteService service = retrofit.create(RouteService.class);
+        Call<RouteResponse> routeResponseCall = service.getRoute(locationOrigin.getID(), locationDestiny.getID());
+
+        routeResponseCall.enqueue(new Callback<RouteResponse>() {
+            @Override
+            public void onResponse(Call<RouteResponse> call, Response<RouteResponse> response) {
+                if(response.isSuccessful()) {
+                    RouteResponse routeResponse = response.body();
+                    ArrayList<PointLocation> pointLocations = routeResponse.getResults();
+                    List<Point> routeCoordinates = new ArrayList<>();
+                    for(PointLocation point:pointLocations) {
+                        routeCoordinates.add(Point.fromLngLat(point.getLongitude(), point.getLatitude()));
+                    }
+                    Style style = mapboxMap.getStyle();
+                    if (style != null) {
+                        if(style.getLayer("linelayer") != null) {
+                            style.removeLayer("linelayer");
+                            Log.i("tag", "Removed LineLayer");
+                        }
+
+                        if(style.getSource("line-source") != null) {
+                            style.removeSource("line-source");
+                            Log.i("tag", "Removed LineSource");
+                        }
+                        style.addSource(new GeoJsonSource("line-source",
+                                FeatureCollection.fromFeatures(new Feature[] {Feature.fromGeometry(
+                                        LineString.fromLngLats(routeCoordinates)
+                                )})));
+                        style.addLayer(new LineLayer("linelayer", "line-source").withProperties(
+                                //PropertyFactory.lineDasharray(new Float[] {0.01f, 2f}),
+                                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                                PropertyFactory.lineWidth(5f),
+                                PropertyFactory.lineColor(Color.parseColor("#e55e5e"))
+                        ));
+                    }
+                } else {
+                    Log.i("tag", "No results");
+                }
+            }
+
+            @Override
+            public void onFailure(Call<RouteResponse> call, Throwable t) {
+                Log.i("tag", "Failure");
+            }
+        });
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem menuItem) {
+        switch (menuItem.getItemId()) {
+            case android.R.id.home:
+                finish();
+                break;
+        }
+        return (super.onOptionsItemSelected(menuItem));
     }
 
     @Override
