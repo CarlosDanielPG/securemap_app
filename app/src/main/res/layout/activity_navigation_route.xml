@@ -28,8 +28,8 @@
             android:layout_marginRight="30dp"
             android:layout_marginBottom="30dp"
             android:background="@drawable/button_round"
-            android:textColor="@color/mapbox_plugins_white"
-            android:text="Buscar ruta" />
+            android:text="Buscar ruta"
+            android:textColor="@color/mapbox_plugins_white" />
     </com.mapbox.mapboxsdk.maps.MapView>
 
 </android.support.constraint.ConstraintLayout>

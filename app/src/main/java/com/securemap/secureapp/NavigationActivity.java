@@ -1,8 +1,6 @@
 package com.securemap.secureapp;
 
-import android.graphics.drawable.ColorDrawable;
-import android.os.Build;
-import android.support.v4.content.ContextCompat;
+import android.app.ProgressDialog;
 import android.support.v7.app.ActionBar;
 import android.app.Activity;
 import android.content.Intent;
@@ -16,28 +14,20 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
-import android.annotation.SuppressLint;
 
-import com.google.gson.JsonObject;
+import com.mapbox.api.directions.v5.DirectionsCriteria;
+import com.mapbox.api.directions.v5.models.DirectionsResponse;
+import com.mapbox.api.directions.v5.models.DirectionsRoute;
 import com.mapbox.api.geocoding.v5.GeocodingCriteria;
 import com.mapbox.api.geocoding.v5.MapboxGeocoding;
 import com.mapbox.api.geocoding.v5.models.CarmenFeature;
-import com.mapbox.android.core.location.LocationEngine;
-import com.mapbox.android.core.location.LocationEngineCallback;
-import com.mapbox.android.core.location.LocationEngineProvider;
-import com.mapbox.android.core.location.LocationEngineRequest;
-import com.mapbox.android.core.location.LocationEngineResult;
-import com.mapbox.android.core.permissions.PermissionsListener;
-import com.mapbox.android.core.permissions.PermissionsManager;
 import com.mapbox.api.geocoding.v5.models.GeocodingResponse;
+import com.mapbox.api.matching.v5.MapboxMapMatching;
+import com.mapbox.api.matching.v5.models.MapMatchingResponse;
 import com.mapbox.core.exceptions.ServicesException;
 import com.mapbox.geojson.Feature;
 import com.mapbox.geojson.FeatureCollection;
@@ -46,10 +36,6 @@ import com.mapbox.geojson.Point;
 import com.mapbox.mapboxsdk.Mapbox;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 import com.mapbox.mapboxsdk.geometry.LatLngBounds;
-import com.mapbox.mapboxsdk.location.LocationComponent;
-import com.mapbox.mapboxsdk.location.LocationComponentActivationOptions;
-import com.mapbox.mapboxsdk.location.modes.CameraMode;
-import com.mapbox.mapboxsdk.location.modes.RenderMode;
 import com.mapbox.mapboxsdk.maps.MapView;
 import com.mapbox.mapboxsdk.maps.MapboxMap;
 import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
@@ -68,6 +54,10 @@ import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.mapboxsdk.camera.CameraPosition;
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
+import com.mapbox.services.android.navigation.ui.v5.NavigationLauncher;
+import com.mapbox.services.android.navigation.ui.v5.NavigationLauncherOptions;
+import com.mapbox.services.android.navigation.ui.v5.route.NavigationMapRoute;
+import com.mapbox.services.android.navigation.v5.navigation.NavigationRoute;
 import com.securemap.secureapp.models.LocationID;
 import com.securemap.secureapp.models.PointLocation;
 import com.securemap.secureapp.models.RouteResponse;
@@ -77,7 +67,6 @@ import com.securemap.secureapp.utilities.RouteService;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconOffset;
 
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -107,6 +96,10 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
     private LocalizationPlugin localizationPlugin;
     private Retrofit retrofit;
     private final String BASE_URL = "https://stormy-plateau-08743.herokuapp.com/api/";
+    private ProgressDialog progressDialog;
+    private DirectionsRoute currentRoute;
+    private NavigationMapRoute navigationMapRoute;
+    private boolean routeFound = false;
 
     private static final Location origin = new Location("");
     private static final Location destiny = new Location("");
@@ -114,11 +107,11 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        routeFound = false;
         //getSupportActionBar().setBackgroundDrawable(new ColorDrawable(ContextCompat.getColor(this, R.color.translucent)));
-
         // Initialize Mapbox with access_token
         Mapbox.getInstance(this, getString(R.string.access_token));
-        setContentView(R.layout.activity_navigation);
+        setContentView(R.layout.activity_navigation_route);
         Intent intent = getIntent();
         origin.setLatitude(intent.getDoubleExtra("origin_latitude", 20.654362));
         origin.setLongitude(intent.getDoubleExtra("origin_longitude", -103.326484));
@@ -143,7 +136,18 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
 
         searchButton = findViewById(R.id.search_button);
         searchButton.setOnClickListener((View view) -> {
-            searchPoints(origin, destiny);
+            if(!routeFound) {
+                //fetchRoute();
+                progressDialog = new ProgressDialog(NavigationActivity.this);
+                progressDialog.setMessage("Please wait...");
+                progressDialog.setTitle("Progress Dialog");
+                //To show the dialog
+                progressDialog.show();
+                searchPoints(origin, destiny);
+            }
+            else {
+                startNavigation();
+            }
         });
     }
 
@@ -169,6 +173,7 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                         putMarkers();
                     }
                 });
+
     }
 
     //region Set Up Mapbox SDK
@@ -298,6 +303,8 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
 
                             ImageView icon = customView.findViewById(R.id.marker_icon);
                             icon.setOnClickListener((View view) -> {
+                                routeFound = false;
+                                searchButton.setText("Buscar ruta");
                                 Intent intent = new PlaceAutocomplete.IntentBuilder()
                                         .accessToken(Mapbox.getAccessToken())
                                         .placeOptions(PlaceOptions.builder()
@@ -354,10 +361,14 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                         public void onResponse(Call<LocationID> call, Response<LocationID> response) {
                             if(response.isSuccessful()) {
                                 LocationID locationIDDestiny = response.body();
-                                onFoundPoints(locationIDOrigin, locationIDDestiny);
+                                onFoundPoints(locationIDOrigin, locationIDDestiny, locationOrigin, locationDestiny);
                             } else {
+                                routeFound = true;
+                                searchButton.setText("Iniciar ruta");
+                                progressDialog.dismiss();
                                 Log.i("tag", "Error in response");
                             }
+
                         }
 
                         @Override
@@ -377,7 +388,7 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
         });
     }
 
-    private void onFoundPoints(LocationID locationOrigin, LocationID locationDestiny) {
+    private void onFoundPoints(LocationID locationOrigin, LocationID locationDestiny, Location originLocation, Location destinyLocation) {
         RouteService service = retrofit.create(RouteService.class);
         Call<RouteResponse> routeResponseCall = service.getRoute(locationOrigin.getID(), locationDestiny.getID());
 
@@ -413,8 +424,12 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                                 PropertyFactory.lineWidth(5f),
                                 PropertyFactory.lineColor(Color.parseColor("#e55e5e"))
                         ));
+                        createCustomRoute(routeCoordinates);
+                        //progressDialog.dismiss();
+                        //getRoute(originLocation, destinyLocation);
                     }
                 } else {
+                    progressDialog.dismiss();
                     Log.i("tag", "No results");
                 }
             }
@@ -477,4 +492,74 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
         super.onLowMemory();
         mapView.onLowMemory();
     }
+
+    private void startNavigation() {
+        boolean simulationRoute = true;
+        NavigationLauncherOptions options = NavigationLauncherOptions.builder()
+                .directionsRoute(currentRoute)
+                .shouldSimulateRoute(simulationRoute)
+                .build();
+
+        NavigationLauncher.startNavigation(NavigationActivity.this, options);
+    }
+
+    private void createCustomRoute(List<Point> coordinates) {
+        MapboxMapMatching.builder()
+                .accessToken(getString(R.string.access_token))
+                .coordinates(coordinates)
+                .waypointIndices(0, coordinates.size() - 1)
+                .language("spanish")
+                .steps(true)
+                .voiceInstructions(true)
+                .bannerInstructions(true)
+                .profile(DirectionsCriteria.PROFILE_WALKING)
+                .build()
+                .enqueueCall(new Callback<MapMatchingResponse>() {
+                    @Override
+                    public void onResponse(Call<MapMatchingResponse> call, Response<MapMatchingResponse> response) {
+                        if(response.isSuccessful()) currentRoute = response.body().matchings().get(0).toDirectionRoute();
+                        if(navigationMapRoute != null) navigationMapRoute.removeRoute();
+                        else navigationMapRoute = new NavigationMapRoute(null, mapView, mapboxMap, R.style.NavigationMapRoute);
+                        navigationMapRoute.addRoute(currentRoute);
+                        routeFound = true;
+                        searchButton.setText("Iniciar ruta");
+                        progressDialog.dismiss();
+                    }
+
+                    @Override
+                    public void onFailure(Call<MapMatchingResponse> call, Throwable t) {
+                        progressDialog.dismiss();
+                    }
+                });
+    }
+
+    private void getRoute(Location originLocation, Location destinyLocation) {
+        NavigationRoute.builder(this)
+                .accessToken(getString(R.string.access_token))
+                .origin(Point.fromLngLat(originLocation.getLongitude(), originLocation.getLatitude()))
+                .destination(Point.fromLngLat(destinyLocation.getLongitude(), destinyLocation.getLatitude()))
+                .build()
+                .getRoute(new Callback<DirectionsResponse>() {
+                    @Override
+                    public void onResponse(Call<DirectionsResponse> call, Response<DirectionsResponse> response) {
+                        if(validRouteResponse(response)) {
+                            currentRoute = response.body().routes().get(0);
+                            if(navigationMapRoute != null) navigationMapRoute.removeRoute();
+                            else navigationMapRoute = new NavigationMapRoute(null, mapView, mapboxMap, R.style.NavigationMapRoute);
+                            navigationMapRoute.addRoute(currentRoute);
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(Call<DirectionsResponse> call, Throwable t) {
+
+                    }
+                });
+    }
+
+    private boolean validRouteResponse(Response<DirectionsResponse> response) {
+        return response.body() != null && !response.body().routes().isEmpty();
+    }
+
+
 }
