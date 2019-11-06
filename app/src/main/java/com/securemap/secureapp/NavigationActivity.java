@@ -18,6 +18,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.mapbox.api.directions.v5.DirectionsCriteria;
 import com.mapbox.api.directions.v5.models.DirectionsResponse;
@@ -332,6 +333,7 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                             }
                         } else {
                             Log.i("tag", "No hay resultados");
+                            Toast.makeText(NavigationActivity.this, "No hay resultados", Toast.LENGTH_LONG).show();
                         }
                     }
                 }
@@ -339,6 +341,7 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                 @Override
                 public void onFailure(Call<GeocodingResponse> call, Throwable t) {
                     Log.i("Error", "Geocoding Failure: " + t.getMessage());
+                    Toast.makeText(NavigationActivity.this, "Error de geolocalización", Toast.LENGTH_LONG).show();
                 }
             });
         } catch(ServicesException serviceException) {
@@ -367,6 +370,7 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                                 searchButton.setText("Iniciar ruta");
                                 progressDialog.dismiss();
                                 Log.i("tag", "Error in response");
+                                Toast.makeText(NavigationActivity.this, "Error en petición", Toast.LENGTH_LONG).show();
                             }
 
                         }
@@ -424,13 +428,14 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                                 PropertyFactory.lineWidth(5f),
                                 PropertyFactory.lineColor(Color.parseColor("#e55e5e"))
                         ));
-                        createCustomRoute(routeCoordinates);
+                        createCustomRoute(filterRoute(routeCoordinates));
                         //progressDialog.dismiss();
                         //getRoute(originLocation, destinyLocation);
                     }
                 } else {
                     progressDialog.dismiss();
                     Log.i("tag", "No results");
+                    Toast.makeText(NavigationActivity.this, "No hay resultados", Toast.LENGTH_LONG).show();
                 }
             }
 
@@ -503,12 +508,39 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
         NavigationLauncher.startNavigation(NavigationActivity.this, options);
     }
 
+    private List<Point> filterRoute(List<Point> coordinates) {
+        if(coordinates.size() == 0) return coordinates;
+        else {
+            List<Point> newList = new ArrayList<Point>();
+            Point point = coordinates.get(0);
+            newList.add(coordinates.get(0));
+            double m = 0;
+            for(int i = 1; i < coordinates.size() - 1; i++){
+                if(coordinates.get(i).longitude() != point.longitude() && coordinates.get(i).latitude() != point.latitude()) {
+                    double m_aux = truncate((coordinates.get(i).latitude() - point.latitude()) / (coordinates.get(i).longitude() - point.longitude()));
+                    if(m_aux != m) {
+                        newList.add(point);
+                        point = coordinates.get(i);
+                        m = m_aux;
+                    }
+                }
+            }
+            newList.add(coordinates.get(coordinates.size() - 1));
+            return newList;
+        }
+    }
+
+    private static double truncate(double x){
+        return Math.floor(x * 100)/100;
+    }
+
     private void createCustomRoute(List<Point> coordinates) {
+        currentRoute = null;
         MapboxMapMatching.builder()
                 .accessToken(getString(R.string.access_token))
                 .coordinates(coordinates)
                 .waypointIndices(0, coordinates.size() - 1)
-                .language("spanish")
+                .language("ES")
                 .steps(true)
                 .voiceInstructions(true)
                 .bannerInstructions(true)
@@ -517,12 +549,16 @@ public class NavigationActivity extends AppCompatActivity implements OnMapReadyC
                 .enqueueCall(new Callback<MapMatchingResponse>() {
                     @Override
                     public void onResponse(Call<MapMatchingResponse> call, Response<MapMatchingResponse> response) {
-                        if(response.isSuccessful()) currentRoute = response.body().matchings().get(0).toDirectionRoute();
+                        if(response.isSuccessful() && response.body() != null && response.body().matchings().size() > 0) currentRoute = response.body().matchings().get(0).toDirectionRoute();
                         if(navigationMapRoute != null) navigationMapRoute.removeRoute();
                         else navigationMapRoute = new NavigationMapRoute(null, mapView, mapboxMap, R.style.NavigationMapRoute);
-                        navigationMapRoute.addRoute(currentRoute);
-                        routeFound = true;
-                        searchButton.setText("Iniciar ruta");
+                        if(currentRoute != null) {
+                            navigationMapRoute.addRoute(currentRoute);
+                            routeFound = true;
+                            searchButton.setText("Iniciar ruta");
+                        } else {
+                            Toast.makeText(NavigationActivity.this, "Tu ruta es demasiado larga, te recomendamos usar el transporte público", Toast.LENGTH_LONG).show();
+                        }
                         progressDialog.dismiss();
                     }
 
